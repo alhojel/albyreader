@@ -6,57 +6,88 @@ Visual feedback system for testing e-ink rendering without hardware.
 
 ```bash
 cd test/rendering_harness
-make run
+make run                   # Build and run all tests
+./rendering_test --list    # Show available tests
+./rendering_test --quiet   # CI mode (exit code only)
 ```
 
 Output PNG files appear in `output/`.
+
+## CLI Usage
+
+```bash
+./rendering_test                      # Run all tests
+./rendering_test typography paper     # Run specific tests
+./rendering_test --quiet              # Minimal output (for CI)
+./rendering_test --output /tmp/out    # Custom output directory
+./rendering_test --list               # Show available tests
+./rendering_test --help               # Show help
+```
+
+### Exit Codes
+- `0` - All tests passed
+- `1` - One or more tests failed or invalid arguments
 
 ## What It Does
 
 This test harness compiles the actual AlbyReader rendering code (GfxRenderer, fonts, etc.) for desktop execution. It mocks the ESP32/Arduino hardware dependencies and outputs PNG screenshots of what the 800x480 e-ink display would show.
 
-## Test Cases
+## Available Tests
 
-| File | Description |
-|------|-------------|
-| `01_typography_basic.png` | Font comparison - Bookerly, Noto Sans, OpenDyslexic at various sizes |
-| `02_unicode_characters.png` | Punctuation, accents, math symbols, currency |
-| `03_paragraph_layout.png` | Word wrapping and multi-line text |
-| `04_graphics_primitives.png` | Lines, rectangles, grids, UI borders |
-| `05_paper_layout.png` | Simulated academic paper with title, abstract, sections |
-| `06_reading_interface.png` | Full reading UI with status bar, progress, content |
-| `07a_portrait_mode.png` | Portrait orientation (480x800 logical) |
-| `07b_landscape_mode.png` | Landscape orientation (800x480 logical) |
-| `08_dense_content.png` | Stress test with maximum text density |
+| Name | Output File | Description |
+|------|-------------|-------------|
+| `typography` | `01_typography.png` | Font families, sizes, and styles |
+| `unicode` | `02_unicode.png` | Special characters and symbols |
+| `paragraph` | `03_paragraph.png` | Multi-line text layout |
+| `graphics` | `04_graphics.png` | Lines, rectangles, shapes |
+| `paper` | `05_paper.png` | Academic paper layout |
+| `reader` | `06_reader.png` | Reading interface UI |
+| `portrait` | `07_portrait.png` | Portrait orientation (480x800) |
+| `landscape` | `08_landscape.png` | Landscape orientation (800x480) |
+| `dense` | `09_dense.png` | Dense content stress test |
 
 ## Build Commands
 
 ```bash
 make        # Build the test harness
-make run    # Build and run, generate PNG output
+make run    # Build and run all tests
 make clean  # Remove build artifacts
 make help   # Show all commands
 ```
 
+## CI Integration
+
+```bash
+# In CI script
+cd test/rendering_harness
+make
+./rendering_test --quiet || exit 1
+```
+
 ## Adding New Tests
 
-Edit `rendering_tests.cpp` and add a new test function:
+1. Add test function to `rendering_tests.cpp`:
 
 ```cpp
 void testMyFeature(GfxRenderer& renderer, EInkDisplay& display) {
-  printf("\n[TEST] My Feature\n");
-
+  log("\n[TEST] myfeature - Description here\n");
   renderer.clearScreen();
 
   // Your rendering code here
   renderer.drawText(BOOKERLY_14_FONT_ID, 20, 20, "Hello, World!");
 
   display.displayBuffer();
-  saveScreen(display, "my_feature");  // Outputs: output/my_feature.png
+  saveScreen(display, "XX_myfeature");
 }
 ```
 
-Then call it from `main()`.
+2. Register in `g_tests` vector:
+
+```cpp
+{"myfeature", "Description here", testMyFeature},
+```
+
+3. Run `make run` to verify.
 
 ## Architecture
 
@@ -68,7 +99,7 @@ rendering_harness/
 │   ├── SdFat.h        # Mock file system
 │   └── SPI.h          # Mock SPI
 ├── stb_image_write.h  # PNG encoding (single-header library)
-├── rendering_tests.cpp # Test cases
+├── rendering_tests.cpp # Test cases with CLI
 ├── Makefile
 └── output/            # Generated PNG files
 ```
@@ -85,3 +116,4 @@ rendering_harness/
 - PNG output is grayscale (black = 0, white = 255)
 - Build uses actual font data from `lib/EpdFont/builtinFonts/`
 - GfxRenderer coordinate transforms are tested via orientation modes
+- Use `--quiet` flag in CI for minimal output with proper exit codes
