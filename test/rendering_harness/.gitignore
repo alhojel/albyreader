@@ -1,0 +1,7 @@
+# Build artifacts
+rendering_test
+*.o
+
+# Test output (generated files)
+output/*.png
+output/*.pbm
