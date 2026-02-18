@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CARDBOARD — The Public Trading Card Board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <style>
+    :root {
+      --bg: #07070f;
+      --surface: #0f0f1c;
+      --border: #1e1e32;
+      --text: #eeeef8;
+      --dim: #6666aa;
+      --purple: #7c3aed;
+      --pink: #ec4899;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Subtle grid bg */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+      background-size: 44px 44px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Noise overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+      background-size: 256px;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.5;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      background: rgba(7,7,15,0.85);
+      backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .logo {
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 900;
+      font-size: 22px;
+      letter-spacing: -1.5px;
+      background: linear-gradient(120deg, #a855f7, #ec4899, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      user-select: none;
+    }
+
+    .logo sub {
+      display: block;
+      font-size: 8.5px;
+      letter-spacing: 3.5px;
+      text-transform: uppercase;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      -webkit-text-fill-color: var(--dim);
+      color: var(--dim);
+      margin-top: 3px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--dim);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      background: #22c55e;
+      border-radius: 50%;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .post-btn {
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      border: none;
+      color: #fff;
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 10px 22px;
+      border-radius: 10px;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      white-space: nowrap;
+    }
+
+    .post-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 28px rgba(124,58,237,0.5);
+    }
+
+    .post-btn:active { transform: translateY(0); }
+
+    /* ─── BOARD ─── */
+    .board-wrap {
+      position: relative;
+      z-index: 1;
+      padding: 40px 28px 60px;
+      max-width: 1700px;
+      margin: 0 auto;
+    }
+
+    #board {
+      columns: 5 210px;
+      column-gap: 22px;
+    }
+
+    /* ─── CARD ─── */
+    .card {
+      break-inside: avoid;
+      margin-bottom: 24px;
+      display: inline-block;
+      width: 100%;
+      position: relative;
+      transform: rotate(var(--tilt));
+      transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), z-index 0s;
+      cursor: pointer;
+      animation: cardDrop 0.55s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    @keyframes cardDrop {
+      from { opacity: 0; transform: rotate(var(--tilt)) translateY(-50px) scale(0.75); }
+      to   { opacity: 1; transform: rotate(var(--tilt)) translateY(0)      scale(1);    }
+    }
+
+    .card:hover {
+      transform: rotate(0deg) scale(1.06) translateY(-10px) !important;
+      z-index: 100;
+    }
+
+    /* Tape */
+    .tape {
+      position: absolute;
+      top: -9px;
+      left: 50%;
+      transform: translateX(-50%) rotate(var(--tape-rot));
+      width: 52px;
+      height: 22px;
+      background: rgba(255,252,200,0.22);
+      border: 1px solid rgba(255,252,200,0.12);
+      border-radius: 2px;
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    /* Pushpin */
+    .pushpin {
+      position: absolute;
+      top: -11px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      z-index: 5;
+      pointer-events: none;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 3px rgba(255,255,255,0.25);
+    }
+
+    .pushpin::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      height: 7px;
+      background: #777;
+      border-radius: 0 0 3px 3px;
+    }
+
+    /* Card inner */
+    .card-inner {
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+      border: 1.5px solid rgba(255,255,255,0.08);
+      transition: transform 0.1s ease;
+      will-change: transform;
+    }
+
+    /* Holographic shimmer */
+    .card-inner.holo::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        115deg,
+        transparent 30%,
+        rgba(255,219,112,0.25) 40%,
+        rgba(132,50,255,0.25) 48%,
+        rgba(56,232,225,0.25) 56%,
+        rgba(255,80,180,0.2) 64%,
+        transparent 72%
+      );
+      background-size: 250% 250%;
+      animation: shimmer 3.5s ease-in-out infinite;
+      z-index: 10;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      border-radius: inherit;
+    }
+
+    .card-inner.rainbow::after {
+      background: linear-gradient(
+        115deg,
+        rgba(255,0,0,0.2) 0%,
+        rgba(255,165,0,0.2) 18%,
+        rgba(255,255,0,0.2) 32%,
+        rgba(0,255,0,0.2) 46%,
+        rgba(0,150,255,0.2) 60%,
+        rgba(100,0,255,0.2) 76%,
+        rgba(238,130,238,0.2) 90%
+      );
+      background-size: 250% 250%;
+      animation: shimmer 1.8s ease-in-out infinite;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 50%; }
+      100% { background-position: -200% 50%; }
+    }
+
+    /* Card header */
+    .c-header {
+      padding: 10px 11px 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+      z-index: 2;
+    }
+
+    .c-name {
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 700;
+      font-size: 11px;
+      line-height: 1.25;
+      color: #fff;
+      max-width: 120px;
+    }
+
+    .c-hp {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      color: #ff6b6b;
+      white-space: nowrap;
+    }
+
+    .c-type-badge {
+      display: inline-block;
+      font-size: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+
+    /* Card art */
+    .c-art {
+      width: calc(100% - 16px);
+      margin: 0 8px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      aspect-ratio: 4/3;
+      z-index: 2;
+    }
+
+    .c-art-emoji {
+      font-size: 68px;
+      line-height: 1;
+      user-select: none;
+      position: relative;
+      z-index: 2;
+    }
+
+    /* Card body */
+    .c-body {
+      padding: 7px 11px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .c-flavor {
+      font-size: 8.5px;
+      color: rgba(255,255,255,0.45);
+      font-style: italic;
+      line-height: 1.45;
+      margin-bottom: 7px;
+    }
+
+    .c-attack {
+      border-radius: 6px;
+      padding: 6px 9px;
+      background: rgba(255,255,255,0.04);
+      border-left: 2.5px solid transparent;
+    }
+
+    .c-attack-name {
+      font-weight: 700;
+      font-size: 9.5px;
+      margin-bottom: 2px;
+    }
+
+    .c-attack-desc {
+      font-size: 8.5px;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.35;
+    }
+
+    /* Card footer */
+    .c-footer {
+      padding: 6px 11px 9px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      position: relative;
+      z-index: 2;
+    }
+
+    .c-author {
+      font-size: 8px;
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 0.2px;
+    }
+
+    .c-rarity-dots {
+      font-size: 10px;
+      letter-spacing: 1px;
+    }
+
+    /* ─── EMPTY STATE ─── */
+    .empty {
+      text-align: center;
+      padding: 100px 20px;
+      color: var(--dim);
+      position: relative;
+      z-index: 1;
+    }
+
+    .empty-emoji { font-size: 88px; margin-bottom: 24px; display: block; }
+
+    .empty h2 {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 22px;
+      color: var(--text);
+      margin-bottom: 10px;
+      letter-spacing: -1px;
+    }
+
+    .empty p { font-size: 14px; }
+
+    /* Card count footer */
+    #foot {
+      text-align: center;
+      font-size: 11px;
+      color: var(--dim);
+      padding-bottom: 40px;
+      position: relative;
+      z-index: 1;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ─── MODAL ─── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(14px);
+      z-index: 500;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .overlay.open {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: #0f0f1e;
+      border: 1px solid var(--border);
+      border-radius: 22px 22px 0 0;
+      padding: 28px 26px 36px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 92vh;
+      overflow-y: auto;
+      transform: translateY(100%);
+      transition: transform 0.45s cubic-bezier(0.34,1.56,0.64,1);
+      position: relative;
+    }
+
+    .overlay.open .modal {
+      transform: translateY(0);
+    }
+
+    .modal-title {
+      font-family: 'Unbounded', sans-serif;
+      font-size: 18px;
+      font-weight: 900;
+      margin-bottom: 22px;
+      background: linear-gradient(120deg, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+
+    .close-x {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      width: 30px;
+      height: 30px;
+      background: rgba(255,255,255,0.07);
+      border: none;
+      border-radius: 50%;
+      color: var(--text);
+      font-size: 15px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .close-x:hover { background: rgba(255,255,255,0.13); }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+    .fg { margin-bottom: 12px; }
+
+    .fg label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--dim);
+      margin-bottom: 5px;
+    }
+
+    .fg input, .fg select, .fg textarea {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 14px;
+      padding: 9px 12px;
+      border-radius: 9px;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+
+    .fg input:focus, .fg select:focus, .fg textarea:focus {
+      border-color: var(--purple);
+    }
+
+    .fg select option { background: #12121e; }
+
+    .fg input.err { border-color: #ff6b6b; }
+
+    /* Emoji grid */
+    .emoji-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 5px;
+      margin-bottom: 16px;
+    }
+
+    .ep {
+      background: rgba(255,255,255,0.04);
+      border: 2px solid transparent;
+      border-radius: 8px;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 5px 4px;
+      text-align: center;
+      transition: all 0.12s;
+      line-height: 1;
+    }
+
+    .ep:hover { background: rgba(255,255,255,0.08); }
+    .ep.sel { border-color: var(--purple); background: rgba(124,58,237,0.18); }
+
+    .slam-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--purple), var(--pink));
+      border: none;
+      color: #fff;
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 15px;
+      border-radius: 13px;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: transform 0.15s, box-shadow 0.15s;
+      margin-top: 4px;
+    }
+
+    .slam-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(124,58,237,0.5);
+    }
+
+    .slam-btn:active { transform: translateY(0); }
+
+    /* Preview section */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      #board { columns: 2 160px; column-gap: 14px; }
+      .board-wrap { padding: 24px 14px 50px; }
+      .logo { font-size: 18px; }
+      .post-btn { font-size: 12px; padding: 9px 16px; }
+      .row { grid-template-columns: 1fr; }
+      .modal { padding: 22px 18px 30px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── HEADER ─── -->
+  <header>
+    <div class="logo">
+      CARDBOARD
+      <sub>public trading card board</sub>
+    </div>
+    <div class="header-right">
+      <div class="live-badge">
+        <span class="live-dot"></span> live
+      </div>
+      <button class="post-btn" onclick="openModal()">+ Post Card</button>
+    </div>
+  </header>
+
+  <!-- ─── BOARD ─── -->
+  <div class="board-wrap">
+    <div id="board"></div>
+  </div>
+  <div id="foot"></div>
+
+  <!-- ─── MODAL ─── -->
+  <div class="overlay" id="overlay" onclick="outsideClick(event)">
+    <div class="modal" id="modal">
+      <button class="close-x" onclick="closeModal()">✕</button>
+      <div class="modal-title">Drop Your Card 🎴</div>
+
+      <div class="row">
+        <div class="fg">
+          <label>Your Name</label>
+          <input id="f-author" type="text" placeholder="TrainerRed" maxlength="22">
+        </div>
+        <div class="fg">
+          <label>Card Name</label>
+          <input id="f-name" type="text" placeholder="Charizard" maxlength="22">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="fg">
+          <label>Type</label>
+          <select id="f-type">
+            <option value="Fire">🔥 Fire</option>
+            <option value="Water">💧 Water</option>
+            <option value="Grass">🌿 Grass</option>
+            <option value="Electric">⚡ Electric</option>
+            <option value="Psychic">🔮 Psychic</option>
+            <option value="Dark">🌑 Dark</option>
+            <option value="Dragon">🐉 Dragon</option>
+            <option value="Fighting">🤺 Fighting</option>
+            <option value="Normal">⭐ Normal</option>
+            <option value="Ice">❄️ Ice</option>
+            <option value="Rock">🪨 Rock</option>
+            <option value="Bug">🐛 Bug</option>
+            <option value="Ghost">👻 Ghost</option>
+            <option value="Poison">☠️ Poison</option>
+            <option value="Steel">🔩 Steel</option>
+            <option value="Fairy">🧚 Fairy</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>HP</label>
+          <input id="f-hp" type="number" placeholder="120" min="10" max="340" value="80">
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="fg">
+          <label>Rarity</label>
+          <select id="f-rarity">
+            <option value="Common">⚪ Common</option>
+            <option value="Uncommon">🟢 Uncommon</option>
+            <option value="Rare">🔵 Rare</option>
+            <option value="Ultra Rare">🟣 Ultra Rare</option>
+            <option value="Secret Rare">🌟 Secret Rare</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Attack Name</label>
+          <input id="f-attack" type="text" placeholder="Hyper Beam" maxlength="22">
+        </div>
+      </div>
+
+      <div class="fg">
+        <label>Attack Description</label>
+        <input id="f-atk-desc" type="text" placeholder="Does 120 damage. Discard all energy." maxlength="90">
+      </div>
+
+      <div class="fg">
+        <label>Flavor Text</label>
+        <input id="f-flavor" type="text" placeholder="A creature of immense and terrifying power…" maxlength="110">
+      </div>
+
+      <div class="section-label">Pick Art</div>
+      <div class="emoji-grid" id="emojiGrid"></div>
+
+      <button class="slam-btn" onclick="submitCard()">SLAM IT ON THE BOARD</button>
+    </div>
+  </div>
+
+  <script>
+  // ─── CONFIG ───────────────────────────────────────────────────────────────
+  const DB_KEY = 'cardboard-v3-public';
+
+  // ─── GUN.JS (decentralized real-time DB, no backend needed) ───────────────
+  const gun = Gun([
+    'https://peer.wallie.io/gun',
+    'https://gun-manhattan.herokuapp.com/gun',
+  ]);
+  const db = gun.get(DB_KEY);
+
+  // ─── TYPE DATA ────────────────────────────────────────────────────────────
+  const TYPES = {
+    Fire:     { bg: 'linear-gradient(160deg,#1a0800,#2d1000)', acc: '#ff6b35', txt: '#ff9a6c', em: '🔥' },
+    Water:    { bg: 'linear-gradient(160deg,#00091a,#00152d)', acc: '#38bdf8', txt: '#7dd3fc', em: '💧' },
+    Grass:    { bg: 'linear-gradient(160deg,#001a04,#002d08)', acc: '#4ade80', txt: '#86efac', em: '🌿' },
+    Electric: { bg: 'linear-gradient(160deg,#1a1500,#2d2400)', acc: '#facc15', txt: '#fde047', em: '⚡' },
+    Psychic:  { bg: 'linear-gradient(160deg,#1a0016,#2d0028)', acc: '#c084fc', txt: '#d8b4fe', em: '🔮' },
+    Dark:     { bg: 'linear-gradient(160deg,#080810,#0f0f1a)', acc: '#64748b', txt: '#94a3b8', em: '🌑' },
+    Dragon:   { bg: 'linear-gradient(160deg,#04092d,#080f40)', acc: '#818cf8', txt: '#a5b4fc', em: '🐉' },
+    Fighting: { bg: 'linear-gradient(160deg,#2d0800,#401000)', acc: '#fb7c3a', txt: '#fdba74', em: '🤺' },
+    Normal:   { bg: 'linear-gradient(160deg,#0e0e16,#16161f)', acc: '#94a3b8', txt: '#cbd5e1', em: '⭐' },
+    Ice:      { bg: 'linear-gradient(160deg,#001a1e,#002d32)', acc: '#22d3ee', txt: '#67e8f9', em: '❄️' },
+    Rock:     { bg: 'linear-gradient(160deg,#1a1200,#2d1e00)', acc: '#b4906e', txt: '#d4b896', em: '🪨' },
+    Bug:      { bg: 'linear-gradient(160deg,#0d1a00,#142d00)', acc: '#a3e635', txt: '#bef264', em: '🐛' },
+    Ghost:    { bg: 'linear-gradient(160deg,#0d0018,#160028)', acc: '#a78bfa', txt: '#c4b5fd', em: '👻' },
+    Poison:   { bg: 'linear-gradient(160deg,#1a001a,#2d002d)', acc: '#e879f9', txt: '#f0abfc', em: '☠️' },
+    Steel:    { bg: 'linear-gradient(160deg,#0a0f14,#12181e)', acc: '#94a3b8', txt: '#cbd5e1', em: '🔩' },
+    Fairy:    { bg: 'linear-gradient(160deg,#1a0011,#2d001e)', acc: '#f472b6', txt: '#f9a8d4', em: '🧚' },
+  };
+
+  const RARITY_GLOW = {
+    'Common':      'none',
+    'Uncommon':    '0 0 18px rgba(34,197,94,0.35)',
+    'Rare':        '0 0 22px rgba(59,130,246,0.5)',
+    'Ultra Rare':  '0 0 28px rgba(139,92,246,0.6), 0 0 55px rgba(139,92,246,0.2)',
+    'Secret Rare': '0 0 35px rgba(236,72,153,0.65), 0 0 70px rgba(124,58,237,0.35)',
+  };
+
+  const RARITY_DOTS = {
+    'Common':      '<span style="color:#555">●</span>',
+    'Uncommon':    '<span style="color:#22c55e">●●</span>',
+    'Rare':        '<span style="color:#3b82f6">●●●</span>',
+    'Ultra Rare':  '<span style="color:#a855f7">★★★★</span>',
+    'Secret Rare': '<span style="color:#ec4899">★★★★★</span>',
+  };
+
+  const RARITY_HOLO = {
+    'Rare': 'holo',
+    'Ultra Rare': 'holo',
+    'Secret Rare': 'rainbow',
+  };
+
+  const PIN_COLORS = [
+    'radial-gradient(circle at 35% 30%, #ff6b6b, #c00)',
+    'radial-gradient(circle at 35% 30%, #60a5fa, #1d4ed8)',
+    'radial-gradient(circle at 35% 30%, #a78bfa, #6d28d9)',
+    'radial-gradient(circle at 35% 30%, #34d399, #059669)',
+    'radial-gradient(circle at 35% 30%, #fbbf24, #d97706)',
+    'radial-gradient(circle at 35% 30%, #f472b6, #be185d)',
+  ];
+
+  const EMOJIS = [
+    '🐲','🔥','💧','⚡','🌿','🔮','🌑','🧊',
+    '🦋','🐉','🦅','🐺','🦁','🐯','🦊','🐻',
+    '🌊','🌋','⚔️','🛡️','💎','👑','🌟','💫',
+    '🦄','🐲','🦎','🦕','🦖','🐙','🦑','🐋',
+    '🌸','🍃','🌺','🌻','🌹','🌈','❄️','🔩',
+    '💀','👻','🧚','🧜','🧙','🏔️','🌙','☀️',
+  ];
+
+  // ─── STATE ────────────────────────────────────────────────────────────────
+  let selectedEmoji = EMOJIS[0];
+  let cardCount = 0;
+  let seenIds = new Set();
+  let emptyTimer = null;
+
+  // ─── EMOJI PICKER ─────────────────────────────────────────────────────────
+  const grid = document.getElementById('emojiGrid');
+  EMOJIS.forEach((e, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ep' + (i === 0 ? ' sel' : '');
+    btn.textContent = e;
+    btn.setAttribute('type', 'button');
+    btn.onclick = () => {
+      grid.querySelectorAll('.ep').forEach(b => b.classList.remove('sel'));
+      btn.classList.add('sel');
+      selectedEmoji = e;
+    };
+    grid.appendChild(btn);
+  });
+
+  // ─── UTILS ────────────────────────────────────────────────────────────────
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function randTilt()     { return ((Math.random() * 8) - 4).toFixed(2) + 'deg'; }
+  function randTapeRot()  { return ((Math.random() * 8) - 4).toFixed(2) + 'deg'; }
+  function randDelay()    { return (Math.random() * 0.25).toFixed(2) + 's'; }
+  function randPinColor() { return PIN_COLORS[Math.floor(Math.random() * PIN_COLORS.length)]; }
+
+  function timeAgo(ts) {
+    const d = Date.now() - ts;
+    if (d < 60000)    return 'just now';
+    if (d < 3600000)  return Math.floor(d/60000) + 'm ago';
+    if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
+    return Math.floor(d/86400000) + 'd ago';
+  }
+
+  function updateFoot() {
+    document.getElementById('foot').textContent =
+      cardCount > 0 ? cardCount + ' card' + (cardCount !== 1 ? 's' : '') + ' on the board' : '';
+  }
+
+  // ─── CARD RENDER ──────────────────────────────────────────────────────────
+  function renderCard(id, d) {
+    const t = TYPES[d.type] || TYPES['Normal'];
+    const glow = RARITY_GLOW[d.rarity] || 'none';
+    const holoClass = RARITY_HOLO[d.rarity] || '';
+    const tilt = randTilt();
+    const useTape = Math.random() > 0.5;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'card';
+    wrap.id = 'c-' + id;
+    wrap.style.cssText = `--tilt:${tilt}; animation-delay:${randDelay()}`;
+
+    // Decoration (pin or tape)
+    const dec = document.createElement('div');
+    if (useTape) {
+      dec.className = 'tape';
+      dec.style.setProperty('--tape-rot', randTapeRot());
+    } else {
+      dec.className = 'pushpin';
+      dec.style.background = randPinColor();
+    }
+    wrap.appendChild(dec);
+
+    // Card inner
+    const inner = document.createElement('div');
+    inner.className = 'card-inner' + (holoClass ? ' ' + holoClass : '');
+    inner.style.cssText = `background:${t.bg}; box-shadow:${glow}`;
+    inner.innerHTML = `
+      <div class="c-header">
+        <div>
+          <div class="c-name">${esc(d.name)}</div>
+          <div class="c-type-badge" style="background:${t.acc}22;color:${t.acc}">
+            ${t.em} ${esc(d.type)}
+          </div>
+        </div>
+        <div class="c-hp">${Math.min(340,Math.max(10,parseInt(d.hp)||80))} HP</div>
+      </div>
+
+      <div class="c-art" style="background:${t.acc}12; border:1px solid ${t.acc}28">
+        <span class="c-art-emoji" style="filter:drop-shadow(0 0 18px ${t.acc}99)">${esc(d.emoji)||'🎴'}</span>
+      </div>
+
+      <div class="c-body">
+        ${d.flavor ? `<div class="c-flavor">"${esc(d.flavor)}"</div>` : ''}
+        ${d.attack ? `
+        <div class="c-attack" style="border-left-color:${t.acc}">
+          <div class="c-attack-name" style="color:${t.acc}">${esc(d.attack)}</div>
+          ${d.atkDesc ? `<div class="c-attack-desc">${esc(d.atkDesc)}</div>` : ''}
+        </div>` : ''}
+      </div>
+
+      <div class="c-footer">
+        <div class="c-author">by ${esc(d.author)} · ${timeAgo(d.ts)}</div>
+        <div class="c-rarity-dots">${RARITY_DOTS[d.rarity]||''}</div>
+      </div>
+    `;
+
+    // 3D tilt on mouse move
+    inner.addEventListener('mousemove', e => {
+      const r = inner.getBoundingClientRect();
+      const x = ((e.clientX - r.left) / r.width  - 0.5) * 14;
+      const y = ((e.clientY - r.top)  / r.height - 0.5) * 14;
+      inner.style.transform = `perspective(700px) rotateY(${x}deg) rotateX(${-y}deg)`;
+    });
+    inner.addEventListener('mouseleave', () => { inner.style.transform = ''; });
+
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
+  // ─── BOARD ────────────────────────────────────────────────────────────────
+  const board = document.getElementById('board');
+
+  function showEmpty() {
+    if (document.getElementById('empty-state')) return;
+    const el = document.createElement('div');
+    el.className = 'empty';
+    el.id = 'empty-state';
+    el.innerHTML = `
+      <span class="empty-emoji">🎴</span>
+      <h2>No cards yet.</h2>
+      <p>Be the first to drop something on the board.</p>
+    `;
+    board.appendChild(el);
+  }
+
+  function hideEmpty() {
+    const el = document.getElementById('empty-state');
+    if (el) el.remove();
+  }
+
+  // Subscribe to all cards (new + existing via history)
+  db.map().on((data, id) => {
+    if (!data || !data.name || !data.author || seenIds.has(id)) return;
+    seenIds.add(id);
+
+    hideEmpty();
+    const el = renderCard(id, data);
+    board.prepend(el);
+
+    cardCount++;
+    updateFoot();
+    if (emptyTimer) { clearTimeout(emptyTimer); emptyTimer = null; }
+  });
+
+  // Show empty state if nothing loads in 3s
+  emptyTimer = setTimeout(showEmpty, 3000);
+
+  // ─── MODAL ────────────────────────────────────────────────────────────────
+  function openModal() {
+    document.getElementById('overlay').classList.add('open');
+    setTimeout(() => document.getElementById('f-author').focus(), 400);
+  }
+
+  function closeModal() {
+    document.getElementById('overlay').classList.remove('open');
+  }
+
+  function outsideClick(e) {
+    if (e.target === document.getElementById('overlay')) closeModal();
+  }
+
+  function submitCard() {
+    const author  = document.getElementById('f-author').value.trim();
+    const name    = document.getElementById('f-name').value.trim();
+    const type    = document.getElementById('f-type').value;
+    const hp      = parseInt(document.getElementById('f-hp').value) || 80;
+    const rarity  = document.getElementById('f-rarity').value;
+    const attack  = document.getElementById('f-attack').value.trim();
+    const atkDesc = document.getElementById('f-atk-desc').value.trim();
+    const flavor  = document.getElementById('f-flavor').value.trim();
+
+    // Validate required fields
+    let ok = true;
+    ['f-author','f-name'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el.value.trim()) {
+        el.classList.add('err');
+        el.addEventListener('input', () => el.classList.remove('err'), { once: true });
+        ok = false;
+      }
+    });
+    if (!ok) return;
+
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    db.get(id).put({ author, name, type, hp, rarity, attack, atkDesc, flavor, emoji: selectedEmoji, ts: Date.now() });
+
+    closeModal();
+
+    // Reset
+    ['f-author','f-name','f-attack','f-atk-desc','f-flavor'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('f-hp').value = '80';
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+    if ((e.key === 'n' || e.key === 'N') && !e.target.matches('input,select,textarea,button'))
+      openModal();
+  });
+  </script>
+</body>
+</html>
